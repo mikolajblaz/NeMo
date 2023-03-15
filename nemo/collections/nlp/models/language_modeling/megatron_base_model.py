@@ -487,6 +487,13 @@ class MegatronBaseModel(NLPModel):
                 'Make sure the number of model chunks is the same across all pipeline stages.'
             )
 
+        if not self.cfg.get('sequence_parallel', False) and self.cfg.get('overlap_p2p_comm', False):
+            logging.info(
+                "P2P communication overlap is currently supported only with sequence parallelism (activation sharding)."
+            )
+            with open_dict(self.cfg):
+                self.cfg.overlap_p2p_comm = False
+
     def is_data_parallel_rank_zero(self):
         if is_global_rank_zero():
             return True
