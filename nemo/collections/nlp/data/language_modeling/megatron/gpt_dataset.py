@@ -51,10 +51,10 @@ def setup_mlperf_debug_logger():
     ch.setFormatter(BaseNeMoFormatter())
     mlperf_logger.addHandler(ch)
 
-    if int(os.getenv('MLPERF_3_0_HANG_DEBUG', 0)) == 0:
-        mlperf_logger.setLevel(INFO)
-    else:
+    if int(os.getenv('MLPERF_3_0_LONG_INIT_DEBUG', 1)) == 1:
         mlperf_logger.setLevel(DEBUG)
+    else:
+        mlperf_logger.setLevel(INFO)
 
 
 setup_mlperf_debug_logger()
