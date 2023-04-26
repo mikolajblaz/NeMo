@@ -47,9 +47,13 @@ mlperf_logger = getLogger(__name__)
 
 
 def setup_mlperf_debug_logger():
+    class MlperfNeMoFormatter(BaseNeMoFormatter):
+        DEFAULT_FORMAT = f":::MLPERF_INIT_DEBUG {BaseNeMoFormatter.DEFAULT_FORMAT}"
+
     ch = StreamHandler()
-    ch.setFormatter(BaseNeMoFormatter())
+    ch.setFormatter(MlperfNeMoFormatter())
     mlperf_logger.addHandler(ch)
+    mlperf_logger.propagate = False
 
     if int(os.getenv('MLPERF_3_0_LONG_INIT_DEBUG', 1)) == 1:
         mlperf_logger.setLevel(DEBUG)
@@ -589,7 +593,7 @@ def _build_index_mappings(
     sample_idx_filename = _filename + '_sample_idx.npy'
     shuffle_idx_filename = _filename + '_shuffle_idx.npy'
 
-    mlperf_logger.debug(f'_build_index_mappings({name}, documents={documents}, num_samples={num_samples}): init')
+    mlperf_logger.debug(f'_build_index_mappings({name}, documents={len(documents)}, num_samples={num_samples}): init')
 
     # Build the indexed mapping if not exist.
     if torch.distributed.get_rank() == 0:
@@ -698,19 +702,19 @@ def _build_index_mappings(
         // torch.distributed.get_world_size(group=parallel_state.get_tensor_model_parallel_group())
     )
 
-    mlperf_logger.debug(f'_build_index_mappings({name}, documents={documents}, num_samples={num_samples}): post-barrier, pre-load')
+    mlperf_logger.debug(f'_build_index_mappings({name}): post-barrier, pre-load')
 
     # Load mappings.
     start_time = time.time()
     logging.info(' > loading doc-idx mapping from {}'.format(doc_idx_filename))
     doc_idx = np.load(doc_idx_filename, allow_pickle=True, mmap_mode='r')
-    mlperf_logger.debug(f'_build_index_mappings({name}, documents={documents}, num_samples={num_samples}): post-doc_idx-load')
+    mlperf_logger.debug(f'_build_index_mappings({name}): post-doc_idx-load')
     logging.info(' > loading sample-idx mapping from {}'.format(sample_idx_filename))
     sample_idx = np.load(sample_idx_filename, allow_pickle=True, mmap_mode='r')
-    mlperf_logger.debug(f'_build_index_mappings({name}, documents={documents}, num_samples={num_samples}): post-sample_idx-load')
+    mlperf_logger.debug(f'_build_index_mappings({name}): post-sample_idx-load')
     logging.info(' > loading shuffle-idx mapping from {}'.format(shuffle_idx_filename))
     shuffle_idx = np.load(shuffle_idx_filename, allow_pickle=True, mmap_mode='r')
-    mlperf_logger.debug(f'_build_index_mappings({name}, documents={documents}, num_samples={num_samples}): post-shuffle_idx-load')
+    mlperf_logger.debug(f'_build_index_mappings({name}): post-shuffle_idx-load')
     logging.info('    loaded indexed file in {:3.3f} seconds'.format(time.time() - start_time))
     logging.info('    total number of samples: {}'.format(sample_idx.shape[0]))
     logging.info('    total number of epochs: {}'.format(num_epochs))
