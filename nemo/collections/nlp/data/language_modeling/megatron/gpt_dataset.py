@@ -16,6 +16,7 @@
 
 import os
 import time
+from logging import getLogger, StreamHandler, INFO, DEBUG
 
 import numpy as np
 import torch
@@ -30,6 +31,8 @@ from nemo.collections.nlp.data.language_modeling.megatron.indexed_dataset import
 from nemo.collections.nlp.data.language_modeling.megatron.indexed_dataset import make_dataset as make_indexed_dataset
 from nemo.core import Dataset
 from nemo.utils import logging
+from nemo.utils.formatters.base import BaseNeMoFormatter
+
 
 try:
     from apex.transformer import parallel_state
@@ -39,6 +42,22 @@ try:
 except (ImportError, ModuleNotFoundError):
 
     HAVE_APEX = False
+
+mlperf_logger = getLogger(__name__)
+
+
+def setup_mlperf_debug_logger():
+    ch = StreamHandler()
+    ch.setFormatter(BaseNeMoFormatter())
+    mlperf_logger.addHandler(ch)
+
+    if int(os.getenv('MLPERF_3_0_HANG_DEBUG', 0)) == 0:
+        mlperf_logger.setLevel(INFO)
+    else:
+        mlperf_logger.setLevel(DEBUG)
+
+
+setup_mlperf_debug_logger()
 
 
 def build_dataset(cfg, trainer, data_prefix, data_impl, num_samples, seq_length, seed, skip_warmup, tokenizer, name):
