@@ -95,6 +95,8 @@ def build_dataset(cfg, trainer, data_prefix, data_impl, num_samples, seq_length,
         datasets = []
         for i in range(len(prefixes)):
             dataset = _build_dataset(prefixes[i], datasets_num_samples[i])
+
+            mlperf_logger.debug(f'_build_prefix_dataset({name}-{i}) done')
             datasets.append(dataset)
         return BlendableDataset(datasets, weights, num_samples)
 
@@ -111,6 +113,8 @@ def build_train_valid_test_datasets(
     skip_warmup,
     tokenizer,
 ):
+    mlperf_logger.debug(f'build_train_valid_test_datasets init')
+
     if data_impl in ['mock']:
         logging.info('Initializing mock GPT dataset for train, validate, and test')
         if len(data_prefix) != 0:
@@ -144,6 +148,7 @@ def build_train_valid_test_datasets(
             tokenizer,
             "train",
         )
+        mlperf_logger.debug(f'build_dataset(train) done')
         validation_ds = build_dataset(
             cfg,
             trainer,
@@ -156,6 +161,7 @@ def build_train_valid_test_datasets(
             tokenizer,
             "valid",
         )
+        mlperf_logger.debug(f'build_dataset(valid) done')
         test_ds = build_dataset(
             cfg,
             trainer,
@@ -168,6 +174,7 @@ def build_train_valid_test_datasets(
             tokenizer,
             "test",
         )
+        mlperf_logger.debug(f'build_dataset(test) done')
         return train_ds, validation_ds, test_ds
 
     else:
@@ -350,12 +357,16 @@ class GPTDataset(Dataset):
         # save index mappings to a configurable dir
         self.index_mapping_dir = cfg.data.get('index_mapping_dir', None)
 
+        mlperf_logger.debug(f'GPTDataset.__init__({name}): pre-makedirs, pre-barrier')
+
         # create index_mapping_dir on rank 0
         if torch.distributed.is_available() and torch.distributed.is_initialized():
             if torch.distributed.get_rank() == 0:
                 if self.index_mapping_dir is not None and not os.path.isdir(self.index_mapping_dir):
                     os.makedirs(self.index_mapping_dir)
+            mlperf_logger.debug(f'GPTDataset.__init__({name}): post-makedirs, pre-barrier')
             torch.distributed.barrier()
+            mlperf_logger.debug(f'GPTDataset.__init__({name}): post-makedirs, post-barrier')
 
         # Build index mappings.
         self.doc_idx, self.sample_idx, self.shuffle_idx = _build_index_mappings(
@@ -578,6 +589,8 @@ def _build_index_mappings(
     sample_idx_filename = _filename + '_sample_idx.npy'
     shuffle_idx_filename = _filename + '_shuffle_idx.npy'
 
+    mlperf_logger.debug(f'_build_index_mappings({name}, documents={documents}, num_samples={num_samples}): init')
+
     # Build the indexed mapping if not exist.
     if torch.distributed.get_rank() == 0:
         if (
@@ -685,14 +698,19 @@ def _build_index_mappings(
         // torch.distributed.get_world_size(group=parallel_state.get_tensor_model_parallel_group())
     )
 
+    mlperf_logger.debug(f'_build_index_mappings({name}, documents={documents}, num_samples={num_samples}): post-barrier, pre-load')
+
     # Load mappings.
     start_time = time.time()
     logging.info(' > loading doc-idx mapping from {}'.format(doc_idx_filename))
     doc_idx = np.load(doc_idx_filename, allow_pickle=True, mmap_mode='r')
+    mlperf_logger.debug(f'_build_index_mappings({name}, documents={documents}, num_samples={num_samples}): post-doc_idx-load')
     logging.info(' > loading sample-idx mapping from {}'.format(sample_idx_filename))
     sample_idx = np.load(sample_idx_filename, allow_pickle=True, mmap_mode='r')
+    mlperf_logger.debug(f'_build_index_mappings({name}, documents={documents}, num_samples={num_samples}): post-sample_idx-load')
     logging.info(' > loading shuffle-idx mapping from {}'.format(shuffle_idx_filename))
     shuffle_idx = np.load(shuffle_idx_filename, allow_pickle=True, mmap_mode='r')
+    mlperf_logger.debug(f'_build_index_mappings({name}, documents={documents}, num_samples={num_samples}): post-shuffle_idx-load')
     logging.info('    loaded indexed file in {:3.3f} seconds'.format(time.time() - start_time))
     logging.info('    total number of samples: {}'.format(sample_idx.shape[0]))
     logging.info('    total number of epochs: {}'.format(num_epochs))
