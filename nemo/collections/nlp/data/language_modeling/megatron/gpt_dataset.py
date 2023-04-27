@@ -16,6 +16,7 @@
 
 import os
 import time
+from logging import getLogger, StreamHandler, INFO, DEBUG
 
 import numpy as np
 import torch
@@ -30,6 +31,8 @@ from nemo.collections.nlp.data.language_modeling.megatron.indexed_dataset import
 from nemo.collections.nlp.data.language_modeling.megatron.indexed_dataset import make_dataset as make_indexed_dataset
 from nemo.core import Dataset
 from nemo.utils import logging
+from nemo.utils.formatters.base import BaseNeMoFormatter
+
 
 try:
     from apex.transformer import parallel_state
@@ -39,6 +42,26 @@ try:
 except (ImportError, ModuleNotFoundError):
 
     HAVE_APEX = False
+
+mlperf_logger = getLogger(__name__)
+
+
+def setup_mlperf_debug_logger():
+    class MlperfNeMoFormatter(BaseNeMoFormatter):
+        DEFAULT_FORMAT = f":::MLPERF_INIT_DEBUG {BaseNeMoFormatter.DEFAULT_FORMAT}"
+
+    ch = StreamHandler()
+    ch.setFormatter(MlperfNeMoFormatter())
+    mlperf_logger.addHandler(ch)
+    mlperf_logger.propagate = False
+
+    if int(os.getenv('MLPERF_3_0_LONG_INIT_DEBUG', 1)) == 1:
+        mlperf_logger.setLevel(DEBUG)
+    else:
+        mlperf_logger.setLevel(INFO)
+
+
+setup_mlperf_debug_logger()
 
 
 def build_dataset(cfg, trainer, data_prefix, data_impl, num_samples, seq_length, seed, skip_warmup, tokenizer, name):
@@ -76,6 +99,8 @@ def build_dataset(cfg, trainer, data_prefix, data_impl, num_samples, seq_length,
         datasets = []
         for i in range(len(prefixes)):
             dataset = _build_dataset(prefixes[i], datasets_num_samples[i])
+
+            mlperf_logger.debug(f'_build_prefix_dataset({name}-{i}) done')
             datasets.append(dataset)
         return BlendableDataset(datasets, weights, num_samples)
 
@@ -92,6 +117,8 @@ def build_train_valid_test_datasets(
     skip_warmup,
     tokenizer,
 ):
+    mlperf_logger.debug(f'build_train_valid_test_datasets init')
+
     if data_impl in ['mock']:
         logging.info('Initializing mock GPT dataset for train, validate, and test')
         if len(data_prefix) != 0:
@@ -125,6 +152,7 @@ def build_train_valid_test_datasets(
             tokenizer,
             "train",
         )
+        mlperf_logger.debug(f'build_dataset(train) done')
         validation_ds = build_dataset(
             cfg,
             trainer,
@@ -137,6 +165,7 @@ def build_train_valid_test_datasets(
             tokenizer,
             "valid",
         )
+        mlperf_logger.debug(f'build_dataset(valid) done')
         test_ds = build_dataset(
             cfg,
             trainer,
@@ -149,6 +178,7 @@ def build_train_valid_test_datasets(
             tokenizer,
             "test",
         )
+        mlperf_logger.debug(f'build_dataset(test) done')
         return train_ds, validation_ds, test_ds
 
     else:
@@ -334,12 +364,16 @@ class GPTDataset(Dataset):
         # save index mappings to a configurable dir
         self.index_mapping_dir = cfg.data.get('index_mapping_dir', None)
 
+        mlperf_logger.debug(f'GPTDataset.__init__({name}): pre-makedirs, pre-barrier')
+
         # create index_mapping_dir on rank 0
         if torch.distributed.is_available() and torch.distributed.is_initialized():
             if torch.distributed.get_rank() == 0:
                 if self.index_mapping_dir is not None and not os.path.isdir(self.index_mapping_dir):
                     os.makedirs(self.index_mapping_dir)
+            mlperf_logger.debug(f'GPTDataset.__init__({name}): post-makedirs, pre-barrier')
             torch.distributed.barrier()
+            mlperf_logger.debug(f'GPTDataset.__init__({name}): post-makedirs, post-barrier')
 
         # Build index mappings.
         self.doc_idx, self.sample_idx, self.shuffle_idx = _build_index_mappings(
@@ -574,6 +608,8 @@ def _build_index_mappings(
     sample_idx_filename = _filename + '_sample_idx.npy'
     shuffle_idx_filename = _filename + '_shuffle_idx.npy'
 
+    mlperf_logger.debug(f'_build_index_mappings({name}, documents={len(documents)}, num_samples={num_samples}): init')
+
     # Build the indexed mapping if not exist.
     if torch.distributed.get_rank() == 0:
         using_cached_indices = True
@@ -627,7 +663,9 @@ def _build_index_mappings(
             # doc-idx.
             start_time = time.time()
             doc_idx = _build_doc_idx(documents, num_epochs, np_rng, separate_last_epoch, shuffle_documents)
+            mlperf_logger.debug(f'rank-0-only _build_index_mappings({name}) doc-idx pre-save')
             np.save(doc_idx_filename, doc_idx, allow_pickle=True)
+            mlperf_logger.debug(f'rank-0-only _build_index_mappings({name}) doc-idx post-save')
             logging.info(
                 ' > elasped time to build and save doc-idx mapping '
                 '(seconds): {:4f}'.format(time.time() - start_time)
@@ -653,7 +691,9 @@ def _build_index_mappings(
             )
             # sample_idx = _build_sample_idx(sizes, doc_idx, seq_length,
             #                              num_epochs, tokens_per_epoch, drop_last, add_extra_token)
+            mlperf_logger.debug(f'rank-0-only _build_index_mappings({name}) sample-idx pre-save')
             np.save(sample_idx_filename, sample_idx, allow_pickle=True)
+            mlperf_logger.debug(f'rank-0-only _build_index_mappings({name}) sample-idx post-save')
             logging.info(
                 ' > elasped time to build and save sample-idx mapping '
                 '(seconds): {:4f}'.format(time.time() - start_time)
@@ -667,7 +707,9 @@ def _build_index_mappings(
             else:
                 num_samples_ = sample_idx.shape[0] - 1
             shuffle_idx = _build_shuffle_idx(num_samples_, sample_idx.shape[0] - 1, np_rng)
+            mlperf_logger.debug(f'rank-0-only _build_index_mappings({name}) shuffle-idx pre-save')
             np.save(shuffle_idx_filename, shuffle_idx, allow_pickle=True)
+            mlperf_logger.debug(f'rank-0-only _build_index_mappings({name}) shuffle-idx post-save')
             logging.info(
                 ' > elasped time to build and save shuffle-idx mapping'
                 ' (seconds): {:4f}'.format(time.time() - start_time)
@@ -682,15 +724,20 @@ def _build_index_mappings(
         // torch.distributed.get_world_size(group=parallel_state.get_tensor_model_parallel_group())
     )
 
+    mlperf_logger.debug(f'_build_index_mappings({name}): post-barrier, pre-load')
+
     if not exchange_indices_distributed or (torch.distributed.get_rank() == 0 and using_cached_indices):
         # Load mappings.
         start_time = time.time()
         logging.info(' > loading doc-idx mapping from {}'.format(doc_idx_filename))
         doc_idx = np.load(doc_idx_filename, allow_pickle=True, mmap_mode='r')
+        mlperf_logger.debug(f'_build_index_mappings({name}): post-doc_idx-load')
         logging.info(' > loading sample-idx mapping from {}'.format(sample_idx_filename))
         sample_idx = np.load(sample_idx_filename, allow_pickle=True, mmap_mode='r')
+        mlperf_logger.debug(f'_build_index_mappings({name}): post-sample_idx-load')
         logging.info(' > loading shuffle-idx mapping from {}'.format(shuffle_idx_filename))
         shuffle_idx = np.load(shuffle_idx_filename, allow_pickle=True, mmap_mode='r')
+        mlperf_logger.debug(f'_build_index_mappings({name}): post-shuffle_idx-load')
         logging.info('    loaded indexed file in {:3.3f} seconds'.format(time.time() - start_time))
         logging.info('    total number of samples: {}'.format(sample_idx.shape[0]))
         logging.info('    total number of epochs: {}'.format(num_epochs))
@@ -700,7 +747,9 @@ def _build_index_mappings(
             indices = [(doc_idx, sample_idx, shuffle_idx)]
         else:
             indices = [None]
+        mlperf_logger.debug(f'exchange_indices_distributed({name}): pre-broadcast')
         torch.distributed.broadcast_object_list(indices)
+        mlperf_logger.debug(f'exchange_indices_distributed({name}): post-broadcast')
         doc_idx, sample_idx, shuffle_idx = indices[0]
 
     return doc_idx, sample_idx, shuffle_idx
