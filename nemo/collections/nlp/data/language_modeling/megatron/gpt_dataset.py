@@ -647,7 +647,9 @@ def _build_index_mappings(
             # doc-idx.
             start_time = time.time()
             doc_idx = _build_doc_idx(documents, num_epochs, np_rng, separate_last_epoch, shuffle_documents)
+            mlperf_logger.debug(f'rank-0-only _build_index_mappings({name}) doc-idx pre-save')
             np.save(doc_idx_filename, doc_idx, allow_pickle=True)
+            mlperf_logger.debug(f'rank-0-only _build_index_mappings({name}) doc-idx post-save')
             logging.info(
                 ' > elasped time to build and save doc-idx mapping '
                 '(seconds): {:4f}'.format(time.time() - start_time)
@@ -673,7 +675,9 @@ def _build_index_mappings(
             )
             # sample_idx = _build_sample_idx(sizes, doc_idx, seq_length,
             #                              num_epochs, tokens_per_epoch, drop_last, add_extra_token)
+            mlperf_logger.debug(f'rank-0-only _build_index_mappings({name}) sample-idx pre-save')
             np.save(sample_idx_filename, sample_idx, allow_pickle=True)
+            mlperf_logger.debug(f'rank-0-only _build_index_mappings({name}) sample-idx post-save')
             logging.info(
                 ' > elasped time to build and save sample-idx mapping '
                 '(seconds): {:4f}'.format(time.time() - start_time)
@@ -687,7 +691,9 @@ def _build_index_mappings(
             else:
                 num_samples_ = sample_idx.shape[0] - 1
             shuffle_idx = _build_shuffle_idx(num_samples_, sample_idx.shape[0] - 1, np_rng)
+            mlperf_logger.debug(f'rank-0-only _build_index_mappings({name}) shuffle-idx pre-save')
             np.save(shuffle_idx_filename, shuffle_idx, allow_pickle=True)
+            mlperf_logger.debug(f'rank-0-only _build_index_mappings({name}) shuffle-idx post-save')
             logging.info(
                 ' > elasped time to build and save shuffle-idx mapping'
                 ' (seconds): {:4f}'.format(time.time() - start_time)
