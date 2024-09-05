@@ -352,8 +352,9 @@ class DistributedCheckpointIO(AsyncCompatibleCheckpointIO):
         import torch
         from pathlib import Path
         state_dict_save_dir = os.getenv('MLPERF_DEBUG_STATE_DICT_SAVE_DIR', None)
-        if state_dict_save_dir is None:
-            raise ValueError('Please set MLPERF_DEBUG_STATE_DICT_SAVE_DIR to save state dicts to.')
+        if not state_dict_save_dir:
+            print('Please set MLPERF_DEBUG_STATE_DICT_SAVE_DIR to save state dicts to. Skipping.')
+            return
         state_dict_save_dir = Path(state_dict_save_dir)
         state_dict_save_dir.mkdir(parents=True, exist_ok=True)
         torch.distributed.barrier()
@@ -361,12 +362,22 @@ class DistributedCheckpointIO(AsyncCompatibleCheckpointIO):
         from megatron.core import parallel_state
         rank_fpath = (state_dict_save_dir /
                       (f'rank{torch.distributed.get_rank()}'
-                      f'_tp{parallel_state.get_tensor_model_parallel_rank()}'
-                      f'_pp{parallel_state.get_pipeline_model_parallel_rank()}'
-                      f'_dp{parallel_state.get_data_parallel_rank(with_context_parallel=True)}'
-                      f'.pt'))
-        logging.info(f'Saving state dict to {rank_fpath}')
-        torch.save(loaded_state_dict, state_dict_save_dir / rank_fpath)
+                       f'_tp{parallel_state.get_tensor_model_parallel_rank()}'
+                       f'_pp{parallel_state.get_pipeline_model_parallel_rank()}'
+                       f'_dp{parallel_state.get_data_parallel_rank(with_context_parallel=True)}'
+                       f'.pt'))
+        print(f'Saving state dict to {rank_fpath}')
+
+        from megatron.core.dist_checkpointing.dict_utils import dict_list_map_outplace
+
+        def copy_erase_hook(x):
+            if hasattr(x, '_pre_forward_hook'):
+                assert isinstance(x, torch.nn.Parameter), type(x)
+                x = x.clone().detach()
+            return x
+
+        state_dict_to_dump = dict_list_map_outplace(copy_erase_hook, loaded_state_dict)
+        torch.save(state_dict_to_dump, state_dict_save_dir / rank_fpath)
 
     def adjust_non_strict_load(self, path: _PATH, sharded_state_dict: Dict[str, Any]):
         ckpt_sharded_metadata = dist_checkpointing.load_tensors_metadata(path)

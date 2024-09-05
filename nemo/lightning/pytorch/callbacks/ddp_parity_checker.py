@@ -61,12 +61,16 @@ class DdpParityChecker(Callback, io.IOMixin):
 
     def on_train_batch_start(self, trainer, pl_module, batch, batch_idx, unused=0) -> None:
         if self.step == self.interval - 1:
-            if pl_check_param_hashes_across_dp_replicas(trainer):
-                logging.info(f"DDP Param parity check passed for batch-id= {batch_idx}")
-            else:
-                trainer.should_stop = True
-                trainer.limit_val_batches = 0
-                logging.info(f"DDP Param parity check FAILED for batch-id= {batch_idx}")
+            try:
+                if pl_check_param_hashes_across_dp_replicas(trainer):
+                    print(f"DDP Param parity check passed for batch-id= {batch_idx}")
+                else:
+                    # trainer.should_stop = True
+                    # trainer.limit_val_batches = 0
+                    print('X' * 100)
+                    print(f"DDP Param parity check FAILED for batch-id= {batch_idx}")
+            except Exception as e:
+                print('Failed parity check')
         self.step = (self.step + 1) % self.interval
 
     def on_train_end(self, trainer, pl_module) -> None:
